@@ -33,6 +33,8 @@ my $ret = $table->set_policy('FORWARD', 'DROP');
 $table->commit();
 $table = IPTables::libiptc::init('filter');
 print "Check it out yourself and press ENTER to continue\n";
+print "# /sbin/iptables -vnL FORWARD\n";
+system(qw( /sbin/iptables -vnL FORWARD ));
 <STDIN>;
 $table->set_policy('FORWARD', $old_policy[0]);
 $table->commit();
@@ -44,6 +46,8 @@ $ret = $table->create_chain('test');
 $table->commit();
 $table = IPTables::libiptc::init('filter');
 print "Check it out yourself and press ENTER to continue\n";
+print "# /sbin/iptables -vnL test\n";
+system(qw( /sbin/iptables -vnL test ));
 <STDIN>;
 
 #Checking
@@ -56,6 +60,8 @@ $ret = $table->delete_chain('test');
 $table->commit();
 $table = IPTables::libiptc::init('filter');
 print "Check it out yourself and press ENTER to continue\n";
+print "# /sbin/iptables -vnL test\n";
+system(qw( /sbin/iptables -vnL test ));
 <STDIN>;
 
 print "List of chains:\n";
@@ -72,7 +78,7 @@ foreach my $rule ( $table->list_rules_IPs('src', 'INPUT') ) {
 }
 print "\n";
 
-print "Adding a rule -s 2.3.4.5 -p tcp --dport 22 -j DROP to INPUT";
+print "Adding a rule -s 3.4.5.6 -p tcp --dport 22 -j DROP to INPUT";
 my $ret = $table->iptables_do_command( [ qw( -I INPUT
                                              -s 3.4.5.6
                                              -m tcp
