@@ -85,7 +85,6 @@ my $ret = $table->iptables_do_command( [ qw( -I INPUT
                                              -p tcp
                                              --dport 22
                                              -j DROP ) ] );
-print "\n$ret and $!\n";
 
 print "Let's try . . .\n";
 print Dumper( $table->iptables_do_command([ '-vnL', 'INPUT']) );
