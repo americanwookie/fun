@@ -1,7 +1,7 @@
 fun
 ===
 
-Scott's random, trying new things repo. Think of it as my laboratory, with me as the mad scientist.
+Scott's random, trying new things repo. Think of it as my laboratory, with me as the mad scientist. These are unfinished scripts that I may have, in part, used in various places. In an ideal world, they'll get spun off into their own projects.
 
 Muahahahahah
 
