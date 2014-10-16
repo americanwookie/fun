@@ -10,3 +10,4 @@ Current Experiments
 
 * __IPTables::libiptc__ exploration (in ./libiptc)
 * __Parsing Apache Logs__ My original parsing technique for Apache log files. Ideally I'll start a new project and make this better
+* __Find Attach__ An automated way to find commonalities for incoming packets to help hint at how an attack should be filtered
