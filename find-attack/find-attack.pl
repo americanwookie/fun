@@ -3,35 +3,79 @@
 use strict;
 use warnings;
 use Net::Pcap::Easy  ();
+use Curses::UI;
 
 #Net::Pcap::Easy setup
 $Net::Pcap::Easy::MIN_SNAPLEN = 128;
 my $npe = Net::Pcap::Easy->new(
     dev              => 'eth0',
     filter           => join( ' ', @_ ),
-    packets_per_loop => 1000,
+    packets_per_loop => 10,
     bytes_to_capture => 128,
     timeout_in_ms    => 0, # 0ms means forever
     promiscuous      => 0, # true or false
     tcp_callback     => \&handle_tcp,
 );
 
+#Curses::UI setup
+my $cui = new Curses::UI( -color_support => 1 );
+
+#First make your menu bars
+my $topmenu = $cui->add( 'topmenu','Menubar',
+                         -fg   => 'blue',
+                         -menu => [ { -label => 'find-attack.pl alpha' } ]
+                       );
+my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
+                             -menu => [ { -label => 'Presss ctrl+q to exit',
+                                          -value => \&exit_dialog } ],
+                             -fg   => "blue",
+                             -y    => $cui->height-1, #WARNING: This option is not upstream
+                      );
+
+#Setup our initial window
+my $win1 = $cui->add( 'win1', 'Window',
+                      -border => 1,
+                      -y      => 1,
+                      -height => $cui->height-2,
+                      -bfg    => 'red',
+                    );
+my $maintext = $win1->add( "initial", "TextViewer",
+                           -text   => "Loading initial data, please wait . . .",
+                           -height => $cui->height-2,
+                         );
+
+#Hotkeys
+sub exit_dialog()
+{
+    my $return = $cui->dialog(
+        -message   => "Do you really want to quit?",
+        -title     => "Are you sure???",
+        -buttons   => ['yes', 'no'],
+
+    );
+    exit(0) if $return;
+}
+$cui->set_binding(sub {$topmenu->focus()}, "\cX");
+$cui->set_binding( \&exit_dialog , "\cQ");
+
+#Initial display
+$maintext->focus();
+$cui->do_one_event();
+
 #Looping vars
 my %attribs;
 my $count;
+my $display;
 
 while( $npe->loop ) {
   #
   #Crunch input from NPE
   #
-  #TODO set width
-  my $width = 80;
+  my $width = $cui->width-2;
 
   #Find the longest 
   my $longest = 0;
   foreach my $attrib ( keys( %attribs ) ) {
-    next if( scalar( keys( %{$attribs{$attrib}} ) ) == 1 );
-
     foreach my $val ( keys( %{$attribs{$attrib}} ) ) {
       my $length = length( $val );
       $length = length( '(none)' ) if( !$length );
@@ -42,18 +86,43 @@ while( $npe->loop ) {
   my $bar_width = $width - $longest - 3;
 
   #Do some output
+  my %output;
   foreach my $attrib ( keys( %attribs ) ) {
-    next if( scalar( keys( %{$attribs{$attrib}} ) ) == 1 );
-    print $attrib."\n";
+    $output{$attrib} = $attrib."\n";
     foreach my $val ( sort { $attribs{$attrib}->{$b} <=> $attribs{$attrib}->{$a} }
                       keys( %{$attribs{$attrib}} ) ) {
-      printf( "  %-${longest}s %s\n",
-              $val?$val:'(none)',
-              make_hash( $attribs{$attrib}->{$val}, $count, $bar_width ),
-            );
+      $output{$attrib} .= sprintf( "  %-${longest}s %s\n",
+                                   $val?$val:'(none)',
+                                   make_hash( $attribs{$attrib}->{$val}, $count, $bar_width ),
+                                 );
     }
   }
 
+  #
+  #Curses::UI
+  #
+  #Update the main window
+  if( !exists( $output{$display} ) ) {
+    $maintext->text( 'Sample is loaded. Please choose an option from the top menu.' );
+  } else {
+    $maintext->text( $output{$display} );
+  }
+ 
+  #Set the menu options
+  $cui->delete('topmenu');
+  my @menus;
+  foreach my $attrib ( keys %attribs ) {
+    #TODO pick up here. Setup a log file and start printing to it, I'm still learning Curses::UI
+    push( @menus, { -label => $attrib,
+                    -value => sub { $display = 'urg'; } } );
+  }
+  my $topmenu = $cui->add( 'topmenu','Menubar',
+                           -fg   => 'blue',
+                           -menu => \@menus
+                         );
+  $topmenu->focus();
+  $cui->draw();
+  $cui->do_one_event();
 } continue {
   $count = 0;
   %attribs = ();
