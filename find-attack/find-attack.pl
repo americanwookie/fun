@@ -2,35 +2,36 @@
 
 use strict;
 use warnings;
-use Term::ReadKey ();
 use Net::Pcap::Easy  ();
 
+#Net::Pcap::Easy setup
 $Net::Pcap::Easy::MIN_SNAPLEN = 128;
-
-my $debug = 0;
-
 my $npe = Net::Pcap::Easy->new(
     dev              => 'eth0',
-    filter           => 'port 22',
-    packets_per_loop => 10,
+    filter           => join( ' ', @_ ),
+    packets_per_loop => 1000,
     bytes_to_capture => 128,
     timeout_in_ms    => 0, # 0ms means forever
     promiscuous      => 0, # true or false
     tcp_callback     => \&handle_tcp,
 );
 
+#Looping vars
 my %attribs;
 my $count;
-my %both = map { $_ => 1 } qw( options flags );
-my ( $width ) = Term::ReadKey::GetTerminalSize();
-$width-- if( $width % 2 );
-$SIG{'WINCH'} = \&window_change;
 
-use Data::Dumper;
 while( $npe->loop ) {
+  #
+  #Crunch input from NPE
+  #
+  #TODO set width
+  my $width = 80;
+
   #Find the longest 
   my $longest = 0;
   foreach my $attrib ( keys( %attribs ) ) {
+    next if( scalar( keys( %{$attribs{$attrib}} ) ) == 1 );
+
     foreach my $val ( keys( %{$attribs{$attrib}} ) ) {
       my $length = length( $val );
       $length = length( '(none)' ) if( !$length );
@@ -42,6 +43,7 @@ while( $npe->loop ) {
 
   #Do some output
   foreach my $attrib ( keys( %attribs ) ) {
+    next if( scalar( keys( %{$attribs{$attrib}} ) ) == 1 );
     print $attrib."\n";
     foreach my $val ( sort { $attribs{$attrib}->{$b} <=> $attribs{$attrib}->{$a} }
                       keys( %{$attribs{$attrib}} ) ) {
@@ -52,7 +54,7 @@ while( $npe->loop ) {
     }
   }
 
-  #Reset
+} continue {
   $count = 0;
   %attribs = ();
 }
@@ -98,7 +100,8 @@ sub handle_tcp {
 
   #Go through IP attributes
   foreach my $attrib ( qw( flags tos ttl proto src_ip dest_ip options ) ) {
-    if( exists( $both{$attrib} ) ) {
+    if(   exists( $ip->{$attrib} )
+       && exists( $tcp->{$attrib} ) ) {
       $attribs{"ether-$attrib"}->{$ip->{$attrib}}++;
     } else {
       $attribs{$attrib}->{$ip->{$attrib}}++;
@@ -106,17 +109,14 @@ sub handle_tcp {
   }
 
   #Go through the TCP attributes
-  foreach my $attrib ( qw( src_port dest_port flags winsize urg options ) ) {
-    if( exists( $both{$attrib} ) ) {
-      $attribs{"tcp-$attrib"}->{$ip->{$attrib}}++;
+  #Skipping options TODO fix
+  foreach my $attrib ( qw( src_port dest_port flags winsize urg ) ) {
+    if(   exists( $ip->{$attrib} )
+       && exists( $tcp->{$attrib} ) ) {
+      $attribs{"tcp-$attrib"}->{$tcp->{$attrib}}++;
     } else {
       $attribs{$attrib}->{$tcp->{$attrib}}++;
     }
   }
   $count++;
-}
-
-sub window_change {
-  ( $width ) = Term::ReadKey::GetTerminalSize();
-  $width-- if( $width % 2 );
 }
