@@ -4,6 +4,10 @@ use strict;
 use warnings;
 use Net::Pcap::Easy  ();
 use Curses::UI;
+use lib './lib';
+
+#Logging
+open( STDERR, '>', 'find-attack.log' );
 
 #Net::Pcap::Easy setup
 $Net::Pcap::Easy::MIN_SNAPLEN = 128;
@@ -65,7 +69,8 @@ $cui->do_one_event();
 #Looping vars
 my %attribs;
 my $count;
-my $display;
+my $display = '';
+my $oldmenu = '';
 
 while( $npe->loop ) {
   #
@@ -109,17 +114,22 @@ while( $npe->loop ) {
   }
  
   #Set the menu options
-  $cui->delete('topmenu');
-  my @menus;
-  foreach my $attrib ( keys %attribs ) {
-    #TODO pick up here. Setup a log file and start printing to it, I'm still learning Curses::UI
-    push( @menus, { -label => $attrib,
-                    -value => sub { $display = 'urg'; } } );
+  if( $oldmenu ne join( '', keys( %attribs ) ) ) {
+    $cui->delete('topmenu');
+    my @menus;
+    foreach my $attrib ( keys %attribs ) {
+      #TODO pick up here: Better handle event loop
+      push( @menus, { -label    => $attrib,
+                      -noexpand => 1, #WARNING this option is not upstream
+                      -value    => sub { $display = $attrib } #WARNING this option is not upstream
+                    } );
+    }
+    $topmenu = $cui->add( 'topmenu','Menubar',
+                          -fg   => 'blue',
+                          -menu => \@menus
+                        );
+    $oldmenu = join( '', keys( %attribs ) );
   }
-  my $topmenu = $cui->add( 'topmenu','Menubar',
-                           -fg   => 'blue',
-                           -menu => \@menus
-                         );
   $topmenu->focus();
   $cui->draw();
   $cui->do_one_event();
