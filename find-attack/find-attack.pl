@@ -14,7 +14,8 @@ $Net::Pcap::Easy::MIN_SNAPLEN = 128;
 my $npe = Net::Pcap::Easy->new(
     dev              => 'eth0',
     filter           => join( ' ', @_ ),
-    packets_per_loop => 10, #TODO: When this number get big, interactivity goes to crap.
+    packets_per_loop => 1, #TODO: When this number get big, interactivity goes to crap.
+    timeout_in_ms    => 100,
     bytes_to_capture => 128,
     timeout_in_ms    => 0, # 0ms means forever
     promiscuous      => 0, # true or false
@@ -26,6 +27,8 @@ my $cui = new Curses::UI( -color_support => 1 );
 
 #Looping vars
 my %attribs;
+my @buffer;
+my $buffer_len = 10;
 my $count;
 my $focus = 'topmenu';
 my $display = '';
@@ -43,7 +46,7 @@ my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
                                           -value => \&exit_dialog } ],
                              -fg   => "blue",
                              -y    => $cui->height-1, #WARNING: This option is not upstream
-                      );
+                          );
 
 #Setup our initial window
 my $win1 = $cui->add( 'win1', 'Window',
@@ -79,23 +82,26 @@ sub cycle_focus() {
   }
 }
 $cui->set_binding(sub {$topmenu->focus()}, "\cX");
+$cui->set_binding( \&update_attribs, 'u' );
 $cui->set_binding( \&cycle_focus, "\t");
 $cui->set_binding( \&exit_dialog , "\cQ");
 
 #Initial display
 $topmenu->focus();
 $cui->do_one_event();
+$cui->set_timer( 'npe_loop', sub { $npe->loop; } );
+$cui->set_timer( 'body_loop', \&update_body );
+$cui->mainloop;
 
-while( $npe->loop ) {
-  #
-  #Crunch input from NPE
-  #
+sub update_body {
+  #Figure out your width
   my $width = $cui->width-5;
   $width-- if( $width % 2 );
 
   #
   #Prepare the body
   #
+  update_attribs() if( !keys( %attribs ) );
   my $body = 'Sample is loaded. Please choose an option from the top menu.';
   if( exists( $attribs{$display} ) ) {
     #Find the longest 
@@ -139,10 +145,6 @@ while( $npe->loop ) {
     $topmenu->focus();
   }
   $cui->draw();
-  $cui->do_one_event();
-} continue {
-  $count = 0;
-  %attribs = ();
 }
 
 sub make_hash {
@@ -184,25 +186,42 @@ sub make_hash {
 sub handle_tcp {
   my ($npe, $ether, $ip, $tcp, $header ) = @_;
 
-  #Go through IP attributes
-  foreach my $attrib ( qw( flags tos ttl proto src_ip dest_ip options ) ) {
-    if(   exists( $ip->{$attrib} )
-       && exists( $tcp->{$attrib} ) ) {
-      $attribs{"ether-$attrib"}->{$ip->{$attrib}}++;
-    } else {
-      $attribs{$attrib}->{$ip->{$attrib}}++;
+  push( @buffer, { 'ip'  => $ip,
+                   'tcp' => $tcp } );
+  shift( @buffer ) while( scalar @buffer > $buffer_len );
+  $cui->delete('bottommenu');
+  my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
+                               -menu => [ { -label => 'Presss ctrl+q to exit ('.(scalar @buffer).')',
+                                            -value => \&exit_dialog } ],
+                               -fg   => "blue",
+                               -y    => $cui->height-1, #WARNING: This option is not upstream
+                            );
+}
+
+sub update_attribs {
+  %attribs = ();
+  foreach my $p ( @buffer ) {
+    #Go through IP attributes
+    foreach my $attrib ( qw( flags tos ttl proto src_ip dest_ip options ) ) {
+      if(   exists( $p->{'ip'}->{$attrib} )
+         && exists( $p->{'tcp'}->{$attrib} ) ) {
+        $attribs{"ether-$attrib"}->{$p->{'ip'}->{$attrib}}++;
+      } else {
+        $attribs{$attrib}->{$p->{'ip'}->{$attrib}}++;
+      }
+    }
+
+    #Go through the TCP attributes
+    #Skipping options TODO fix
+    foreach my $attrib ( qw( src_port dest_port flags winsize urg ) ) {
+      if(   exists( $p->{'ip'}->{$attrib} )
+         && exists( $p->{'tcp'}->{$attrib} ) ) {
+        $attribs{"tcp-$attrib"}->{$p->{'tcp'}->{$attrib}}++;
+      } else {
+        $attribs{$attrib}->{$p->{'tcp'}->{$attrib}}++;
+      }
     }
   }
 
-  #Go through the TCP attributes
-  #Skipping options TODO fix
-  foreach my $attrib ( qw( src_port dest_port flags winsize urg ) ) {
-    if(   exists( $ip->{$attrib} )
-       && exists( $tcp->{$attrib} ) ) {
-      $attribs{"tcp-$attrib"}->{$tcp->{$attrib}}++;
-    } else {
-      $attribs{$attrib}->{$tcp->{$attrib}}++;
-    }
-  }
-  $count++;
+  $count = scalar @buffer;
 }
