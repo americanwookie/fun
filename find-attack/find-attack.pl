@@ -14,7 +14,7 @@ $Net::Pcap::Easy::MIN_SNAPLEN = 128;
 my $npe = Net::Pcap::Easy->new(
     dev              => 'eth0',
     filter           => join( ' ', @_ ),
-    packets_per_loop => 10,
+    packets_per_loop => 10, #TODO: When this number get big, interactivity goes to crap.
     bytes_to_capture => 128,
     timeout_in_ms    => 0, # 0ms means forever
     promiscuous      => 0, # true or false
@@ -24,10 +24,19 @@ my $npe = Net::Pcap::Easy->new(
 #Curses::UI setup
 my $cui = new Curses::UI( -color_support => 1 );
 
+#Looping vars
+my %attribs;
+my $count;
+my $focus = 'topmenu';
+my $display = '';
+my $oldmenu = '';
+
 #First make your menu bars
 my $topmenu = $cui->add( 'topmenu','Menubar',
                          -fg   => 'blue',
-                         -menu => [ { -label => 'find-attack.pl alpha' } ]
+                         -menu => [ { -label    => 'find-attack.pl alpha',
+                                      -noexpand => 1, #WARNING this option is not upstream
+                                    } ]
                        );
 my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
                              -menu => [ { -label => 'Presss ctrl+q to exit',
@@ -45,6 +54,7 @@ my $win1 = $cui->add( 'win1', 'Window',
                     );
 my $maintext = $win1->add( "initial", "TextViewer",
                            -text   => "Loading initial data, please wait . . .",
+                           -vscrollbar => 1,
                            -height => $cui->height-2,
                          );
 
@@ -59,59 +69,56 @@ sub exit_dialog()
     );
     exit(0) if $return;
 }
+sub cycle_focus() {
+  if( $focus eq 'topmenu' ) {
+    $maintext->focus();
+    $focus = 'maintext';
+  } elsif( $focus eq 'maintext' ) {
+    $topmenu->focus();
+    $focus = 'topmenu';
+  }
+}
 $cui->set_binding(sub {$topmenu->focus()}, "\cX");
+$cui->set_binding( \&cycle_focus, "\t");
 $cui->set_binding( \&exit_dialog , "\cQ");
 
 #Initial display
-$maintext->focus();
+$topmenu->focus();
 $cui->do_one_event();
-
-#Looping vars
-my %attribs;
-my $count;
-my $display = '';
-my $oldmenu = '';
 
 while( $npe->loop ) {
   #
   #Crunch input from NPE
   #
-  my $width = $cui->width-2;
+  my $width = $cui->width-5;
+  $width-- if( $width % 2 );
 
-  #Find the longest 
-  my $longest = 0;
-  foreach my $attrib ( keys( %attribs ) ) {
-    foreach my $val ( keys( %{$attribs{$attrib}} ) ) {
+  #
+  #Prepare the body
+  #
+  my $body = 'Sample is loaded. Please choose an option from the top menu.';
+  if( exists( $attribs{$display} ) ) {
+    #Find the longest 
+    my $longest = 0;
+    foreach my $val ( keys( %{$attribs{$display}} ) ) {
       my $length = length( $val );
       $length = length( '(none)' ) if( !$length );
       $longest = $length if( $length > $longest );
     }
-  }
-  $longest = ( ( $width / 2 ) - 3 ) if( $longest >  ( ( $width / 2 ) - 3 ) );
-  my $bar_width = $width - $longest - 3;
+    $longest = ( ( $width / 2 ) - 3 ) if( $longest >  ( ( $width / 2 ) - 3 ) );
+    my $bar_width = $width - $longest - 3;
 
-  #Do some output
-  my %output;
-  foreach my $attrib ( keys( %attribs ) ) {
-    $output{$attrib} = $attrib."\n";
-    foreach my $val ( sort { $attribs{$attrib}->{$b} <=> $attribs{$attrib}->{$a} }
-                      keys( %{$attribs{$attrib}} ) ) {
-      $output{$attrib} .= sprintf( "  %-${longest}s %s\n",
-                                   $val?$val:'(none)',
-                                   make_hash( $attribs{$attrib}->{$val}, $count, $bar_width ),
-                                 );
+    #Do some output
+    $body = $display."\n";
+    foreach my $val ( sort { $attribs{$display}->{$b} <=> $attribs{$display}->{$a} }
+                      keys( %{$attribs{$display}} ) ) {
+      $body .= sprintf( "  %-${longest}s %s\n",
+                        $val?$val:'(none)',
+                        make_hash( $attribs{$display}->{$val}, $count, $bar_width ),
+                      );
     }
   }
-
-  #
-  #Curses::UI
-  #
-  #Update the main window
-  if( !exists( $output{$display} ) ) {
-    $maintext->text( 'Sample is loaded. Please choose an option from the top menu.' );
-  } else {
-    $maintext->text( $output{$display} );
-  }
+  $maintext->text( $body );
  
   #Set the menu options
   if( $oldmenu ne join( '', keys( %attribs ) ) ) {
@@ -129,8 +136,8 @@ while( $npe->loop ) {
                           -menu => \@menus
                         );
     $oldmenu = join( '', keys( %attribs ) );
+    $topmenu->focus();
   }
-  $topmenu->focus();
   $cui->draw();
   $cui->do_one_event();
 } continue {
