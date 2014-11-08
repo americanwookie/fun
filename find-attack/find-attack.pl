@@ -107,6 +107,7 @@ sub update_body {
   }
  
   #Set the menu options
+  #TODO improve top menu option by being able to retrive current selection and use that to help the maintext repaint when the user hits 'u'
   #TODO improve menu presentation
   if( $oldmenu ne join( '', keys( %attribs ) ) ) {
     $cui->delete('topmenu');
@@ -115,6 +116,7 @@ sub update_body {
       push( @menus, { -label    => $attrib,
                       -noexpand => 1, #WARNING this option is not upstream
                       -value    => sub { debug( "Switching screen to $attrib" );
+                                         update_attribs();
                                          $maintext->text( "$attrib\n".build_body( $attribs{$attrib}, $width ) );
                                          $cui->draw(); } #WARNING this option is not upstream
                     } );
