@@ -32,6 +32,7 @@ my $buffer_len = 10;
 my $count;
 my $focus = 'topmenu';
 my $oldmenu = '';
+my $debug = 1;
 
 #First make your menu bars
 my $topmenu = $cui->add( 'topmenu','Menubar',
@@ -113,7 +114,8 @@ sub update_body {
     foreach my $attrib ( keys %attribs ) {
       push( @menus, { -label    => $attrib,
                       -noexpand => 1, #WARNING this option is not upstream
-                      -value    => sub { $maintext->text( "$attrib\n".build_body( $attribs{$attrib}, $width ) );
+                      -value    => sub { debug( "Switching screen to $attrib" );
+                                         $maintext->text( "$attrib\n".build_body( $attribs{$attrib}, $width ) );
                                          $cui->draw(); } #WARNING this option is not upstream
                     } );
     }
@@ -169,6 +171,7 @@ sub handle_tcp {
   push( @buffer, { 'ip'  => $ip,
                    'tcp' => $tcp } );
   shift( @buffer ) while( scalar @buffer > $buffer_len );
+  debug("Adding packet from ".$ip->{'src_ip'}." to the buffer");
   $cui->delete('bottommenu');
   my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
                                -menu => [ { -label => 'Presss ctrl+q to exit ('.(scalar @buffer).')',
@@ -179,6 +182,7 @@ sub handle_tcp {
 }
 
 sub update_attribs {
+  debug("Rebuilding attribs from buffer");
   %attribs = ();
   foreach my $p ( @buffer ) {
     #Go through IP attributes
@@ -230,4 +234,11 @@ sub build_body {
                     );
   }
   return $body;
+}
+
+sub debug {
+  my $msg = shift;
+  if( $debug ) {
+    warn localtime()." ".$msg;
+  }
 }
