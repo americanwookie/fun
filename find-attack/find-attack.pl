@@ -14,7 +14,7 @@ $Net::Pcap::Easy::MIN_SNAPLEN = 128;
 my $npe = Net::Pcap::Easy->new(
     dev              => 'eth0',
     filter           => join( ' ', @_ ),
-    packets_per_loop => 1, #TODO: When this number get big, interactivity goes to crap.
+    packets_per_loop => 1,
     timeout_in_ms    => 100,
     bytes_to_capture => 128,
     timeout_in_ms    => 0, # 0ms means forever
@@ -31,7 +31,6 @@ my @buffer;
 my $buffer_len = 10;
 my $count;
 my $focus = 'topmenu';
-my $display = '';
 my $oldmenu = '';
 
 #First make your menu bars
@@ -102,39 +101,20 @@ sub update_body {
   #Prepare the body
   #
   update_attribs() if( !keys( %attribs ) );
-  my $body = 'Sample is loaded. Please choose an option from the top menu.';
-  if( exists( $attribs{$display} ) ) {
-    #Find the longest 
-    my $longest = 0;
-    foreach my $val ( keys( %{$attribs{$display}} ) ) {
-      my $length = length( $val );
-      $length = length( '(none)' ) if( !$length );
-      $longest = $length if( $length > $longest );
-    }
-    $longest = ( ( $width / 2 ) - 3 ) if( $longest >  ( ( $width / 2 ) - 3 ) );
-    my $bar_width = $width - $longest - 3;
-
-    #Do some output
-    $body = $display."\n";
-    foreach my $val ( sort { $attribs{$display}->{$b} <=> $attribs{$display}->{$a} }
-                      keys( %{$attribs{$display}} ) ) {
-      $body .= sprintf( "  %-${longest}s %s\n",
-                        $val?$val:'(none)',
-                        make_hash( $attribs{$display}->{$val}, $count, $bar_width ),
-                      );
-    }
+  if( $maintext->text() =~ /^Loading initial data/ ) {
+    $maintext->text( 'Sample is loaded. Please choose an option from the top menu.' );
   }
-  $maintext->text( $body );
  
   #Set the menu options
+  #TODO improve menu presentation
   if( $oldmenu ne join( '', keys( %attribs ) ) ) {
     $cui->delete('topmenu');
     my @menus;
     foreach my $attrib ( keys %attribs ) {
-      #TODO pick up here: Better handle event loop
       push( @menus, { -label    => $attrib,
                       -noexpand => 1, #WARNING this option is not upstream
-                      -value    => sub { $display = $attrib } #WARNING this option is not upstream
+                      -value    => sub { $maintext->text( "$attrib\n".build_body( $attribs{$attrib}, $width ) );
+                                         $cui->draw(); } #WARNING this option is not upstream
                     } );
     }
     $topmenu = $cui->add( 'topmenu','Menubar',
@@ -224,4 +204,30 @@ sub update_attribs {
   }
 
   $count = scalar @buffer;
+}
+
+sub build_body {
+  my $data = shift;
+  my $width = shift;
+
+  #Find the longest 
+  my $longest = 0;
+  foreach my $val ( keys( %{$data} ) ) {
+    my $length = length( $val );
+    $length = length( '(none)' ) if( !$length );
+    $longest = $length if( $length > $longest );
+  }
+  $longest = ( ( $width / 2 ) - 3 ) if( $longest >  ( ( $width / 2 ) - 3 ) );
+  my $bar_width = $width - $longest - 3;
+
+  #Do some output
+  my $body = '';
+  foreach my $val ( sort { $data->{$b} <=> $data->{$a} }
+                    keys( %{$data} ) ) {
+    $body .= sprintf( "  %-${longest}s %s\n",
+                      $val?$val:'(none)',
+                      make_hash( $data->{$val}, $count, $bar_width ),
+                    );
+  }
+  return $body;
 }
