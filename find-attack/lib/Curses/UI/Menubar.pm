@@ -699,6 +699,15 @@ sub mouse_button1
     return $this;
 }
 
+sub selected()
+{
+    my $this = shift;
+    if( defined( $this->{-selected} ) ) {
+      return $this->{-menu}->[$this->{-selected}]->{-label};
+    }
+    return;
+}
+
 1;
 
 

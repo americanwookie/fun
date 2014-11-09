@@ -2,6 +2,7 @@
 
 use strict;
 use warnings;
+use Carp qw( cluck );
 use Net::Pcap::Easy  ();
 use Curses::UI;
 use lib './lib';
@@ -82,7 +83,7 @@ sub cycle_focus() {
   }
 }
 $cui->set_binding(sub {$topmenu->focus()}, "\cX");
-$cui->set_binding( \&update_attribs, 'u' );
+$cui->set_binding( \&update_maintext, 'u' );
 $cui->set_binding( \&cycle_focus, "\t");
 $cui->set_binding( \&exit_dialog , "\cQ");
 
@@ -94,10 +95,6 @@ $cui->set_timer( 'body_loop', \&update_body );
 $cui->mainloop;
 
 sub update_body {
-  #Figure out your width
-  my $width = $cui->width-5;
-  $width-- if( $width % 2 );
-
   #
   #Prepare the body
   #
@@ -107,7 +104,6 @@ sub update_body {
   }
  
   #Set the menu options
-  #TODO improve top menu option by being able to retrive current selection and use that to help the maintext repaint when the user hits 'u'
   #TODO improve menu presentation
   if( $oldmenu ne join( '', keys( %attribs ) ) ) {
     $cui->delete('topmenu');
@@ -115,10 +111,7 @@ sub update_body {
     foreach my $attrib ( keys %attribs ) {
       push( @menus, { -label    => $attrib,
                       -noexpand => 1, #WARNING this option is not upstream
-                      -value    => sub { debug( "Switching screen to $attrib" );
-                                         update_attribs();
-                                         $maintext->text( "$attrib\n".build_body( $attribs{$attrib}, $width ) );
-                                         $cui->draw(); } #WARNING this option is not upstream
+                      -value    => sub { update_maintext(); } #WARNING this option is not upstream
                     } );
     }
     $topmenu = $cui->add( 'topmenu','Menubar',
@@ -134,12 +127,12 @@ sub update_body {
 sub make_hash {
   my $part  = shift;
   my $total = shift;
-  my $width = shift;
+  my $hash_width = shift;
 
   #On the right hand side, we'll leave five spaces for percent, e.g.
   #[==- ] 100%
   #And the square brackets take another 2
-  my $bar_width = $width - 7;
+  my $bar_width = $hash_width - 7;
   my $equal_width = sprintf( '%.5f', 100 / $bar_width );
   my $dash_width = $equal_width / 2;
   #Try to correct for floating rounding silliness further down (gee, it'd
@@ -214,7 +207,7 @@ sub update_attribs {
 
 sub build_body {
   my $data = shift;
-  my $width = shift;
+  my $width = get_width();
 
   #Find the longest 
   my $longest = 0;
@@ -238,9 +231,24 @@ sub build_body {
   return $body;
 }
 
+sub update_maintext {
+  my $selected = $topmenu->selected();
+  debug( "Updating screen to ".$selected );
+  update_attribs();
+  $maintext->text( "$selected\n".build_body( $attribs{$selected} ) );
+  $cui->draw();
+}
+
+sub get_width {
+  my $width = $cui->width-5;
+  $width-- if( $width % 2 );
+  return $width;
+}
+
 sub debug {
   my $msg = shift;
   if( $debug ) {
     warn localtime()." ".$msg;
+    #cluck( localtime()." ".$msg );
   }
 }
