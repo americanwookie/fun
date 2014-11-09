@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp qw( cluck );
 use Net::Pcap::Easy  ();
+use Time::HiRes ();
 use Curses::UI;
 use lib './lib';
 
@@ -99,12 +100,13 @@ sub update_body {
   #Prepare the body
   #
   update_attribs() if( !keys( %attribs ) );
-  if( $maintext->text() =~ /^Loading initial data/ ) {
+  if(   $maintext->text() =~ /^Loading initial data/
+     && keys( %attribs ) ) {
+    debug( "Telling the user sample is loaded" );
     $maintext->text( 'Sample is loaded. Please choose an option from the top menu.' );
   }
  
   #Set the menu options
-  #TODO improve menu presentation
   if( $oldmenu ne join( '', keys( %attribs ) ) ) {
     $cui->delete('topmenu');
     my @menus;
@@ -113,6 +115,7 @@ sub update_body {
                       -noexpand => 1, #WARNING this option is not upstream
                     } );
     }
+    debug( "Adding new topmenu" );
     $topmenu = $cui->add( 'topmenu','Menubar',
                           -fg       => 'blue',
                           -onchange => sub { update_maintext(); }, #WARNING this option is not upstream".
@@ -120,8 +123,9 @@ sub update_body {
                         );
     $oldmenu = join( '', keys( %attribs ) );
     $topmenu->focus();
+    debug( "Calling for draw" );
+    $cui->draw();
   }
-  $cui->draw();
 }
 
 sub make_hash {
@@ -247,8 +251,9 @@ sub get_width {
 
 sub debug {
   my $msg = shift;
+  my ( undef, $microseconds) = Time::HiRes::gettimeofday;
   if( $debug ) {
-    warn localtime()." ".$msg;
+    warn localtime()." $microseconds ".$msg;
     #cluck( localtime()." ".$msg );
   }
 }
