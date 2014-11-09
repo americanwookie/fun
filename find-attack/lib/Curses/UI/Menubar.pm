@@ -353,6 +353,7 @@ sub new ()
         -parent         => undef,    # the parent window
         -menu           => [],       # the menu definition
         -menuhandler    => undef,    # a custom menu handler (optional)
+        -onchange       => undef,    # a custom handler when the selected menu option changes (optional)
 
 	-bg             => -1,
         -fg             => -1,
@@ -661,7 +662,9 @@ sub menu_left()
     $this->{-selected}--;
     $this->{-selected} = @{$this->{-menu}}-1 
         if $this->{-selected} < 0;
-    $this->schedule_draw(1);    
+    $this->schedule_draw(1);
+    $this->{'-onchange'}->()
+        if( ref( $this->{'-onchange'} ) eq 'CODE' );
     return $this;
 }
 
@@ -671,6 +674,8 @@ sub menu_right()
     $this->{-selected}++;
     $this->{-selected} = 0
         if $this->{-selected} > (@{$this->{-menu}}-1);
+    $this->{'-onchange'}->()
+        if( ref( $this->{'-onchange'} ) eq 'CODE' );
     $this->schedule_draw(1);    
     return $this;
 }
@@ -693,6 +698,8 @@ sub mouse_button1
 
     $this->focus();
     $this->{-selected} = $idx;
+    $this->{'onchange'}->()
+        if( ref( $this->{'onchange'} ) eq 'CODE' );
     $this->pulldown();
     $this->schedule_draw(1);
 

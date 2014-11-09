@@ -111,12 +111,12 @@ sub update_body {
     foreach my $attrib ( keys %attribs ) {
       push( @menus, { -label    => $attrib,
                       -noexpand => 1, #WARNING this option is not upstream
-                      -value    => sub { update_maintext(); } #WARNING this option is not upstream
                     } );
     }
     $topmenu = $cui->add( 'topmenu','Menubar',
-                          -fg   => 'blue',
-                          -menu => \@menus
+                          -fg       => 'blue',
+                          -onchange => sub { update_maintext(); }, #WARNING this option is not upstream".
+                          -menu     => \@menus
                         );
     $oldmenu = join( '', keys( %attribs ) );
     $topmenu->focus();
