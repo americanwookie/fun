@@ -44,7 +44,7 @@ my $topmenu = $cui->add( 'topmenu','Menubar',
                                     } ]
                        );
 my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
-                             -menu => [ { -label => 'Presss ctrl+q to exit',
+                             -menu => [ { -label => 'Presss q to exit',
                                           -value => \&exit_dialog } ],
                              -fg   => "blue",
                              -y    => $cui->height-1, #WARNING: This option is not upstream
@@ -86,11 +86,10 @@ sub cycle_focus() {
 $cui->set_binding(sub {$topmenu->focus()}, "\cX");
 $cui->set_binding( \&update_maintext, 'u' );
 $cui->set_binding( \&cycle_focus, "\t");
-$cui->set_binding( \&exit_dialog , "\cQ");
+$cui->set_binding( \&exit_dialog , "q");
 
 #Initial display
 $topmenu->focus();
-$cui->do_one_event();
 $cui->set_timer( 'npe_loop', sub { $npe->loop; } );
 $cui->set_timer( 'body_loop', \&update_body );
 $cui->mainloop;
@@ -173,7 +172,7 @@ sub handle_tcp {
   debug("Adding packet from ".$ip->{'src_ip'}." to the buffer");
   $cui->delete('bottommenu');
   my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
-                               -menu => [ { -label => 'Presss ctrl+q to exit ('.(scalar @buffer).')',
+                               -menu => [ { -label => 'Presss q to exit ('.(scalar @buffer).')',
                                             -value => \&exit_dialog } ],
                                -fg   => "blue",
                                -y    => $cui->height-1, #WARNING: This option is not upstream
