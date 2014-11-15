@@ -61,6 +61,7 @@ my $cui = new Curses::UI( -color_support => 1 );
 my %attribs;
 my @buffer;
 my $buffer_len = 100;
+my $overread_buffer = '';
 my $count;
 my $focus = 'topmenu';
 my $oldmenu = '';
@@ -129,7 +130,7 @@ sub update_body {
   #
   #Prepare the body
   #
-  update_attribs() if( !keys( %attribs ) );
+  update_attribs();
   if(   $maintext->text() =~ /^Loading initial data/
      && keys( %attribs ) ) {
     debug( "Telling the user sample is loaded" );
@@ -200,12 +201,14 @@ sub update_attribs {
 
   #Let's see if our child has given us anything . . .
   my $new = 0;
+  my $started = [ Time::HiRes::gettimeofday ];
+  #TODO: Start here: Look at benchmarks for read technique and make sure the overread_buffer is working
   while( sysread( $read, my $buf, 4096 ) ) {
-    #Split it into lines. Toss the corrupt record. TODO fix
+    debug( "BENCH Working a ".length( $buf )." string ");
     my @lines = split(/\n/, $buf);
+    $lines[0] = $overread_buffer . $lines[0];
     if( $buf !~ /\n$/g ) {
-      debug("WARNING: corrupt record tossed in buf");
-      pop( @lines );
+      $overread_buffer = pop( @lines );
     }
 
     #Decode it and shove it on buffer
@@ -220,9 +223,14 @@ sub update_attribs {
         push( @buffer, $data );
       }
     }
+    debug( "BENCH done" );
 
     #Trim the buffer
     shift( @buffer ) while( scalar @buffer > $buffer_len );
+    if ( Time::HiRes::tv_interval( $started ) > 0.2 ) {
+      debug("I've been in this loop too long. Bailing");
+      last;
+    }
   }
   debug( "Added $new packets to buffer" );
 
