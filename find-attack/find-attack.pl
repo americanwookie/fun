@@ -15,7 +15,7 @@ open( STDERR, '>', 'find-attack.log' );
 $Net::Pcap::Easy::MIN_SNAPLEN = 128;
 my $npe = Net::Pcap::Easy->new(
     dev              => 'eth0',
-    filter           => join( ' ', @_ ),
+    filter           => join( ' ', @ARGV ),
     packets_per_loop => 1,
     timeout_in_ms    => 100,
     bytes_to_capture => 128,
@@ -30,7 +30,7 @@ my $cui = new Curses::UI( -color_support => 1 );
 #Looping vars
 my %attribs;
 my @buffer;
-my $buffer_len = 10;
+my $buffer_len = 100;
 my $count;
 my $focus = 'topmenu';
 my $oldmenu = '';
@@ -90,11 +90,12 @@ $cui->set_binding( \&exit_dialog , "q");
 
 #Initial display
 $topmenu->focus();
-$cui->set_timer( 'npe_loop', sub { $npe->loop; } );
+$cui->set_timer( 'npe_loop', sub { debug( "NPE called" ); $npe->loop; } );
 $cui->set_timer( 'body_loop', \&update_body );
 $cui->mainloop;
 
 sub update_body {
+  debug("update_body called");
   #
   #Prepare the body
   #
@@ -163,13 +164,15 @@ sub make_hash {
   return sprintf( "[%-${bar_width}s] %3d%%", $str, $percent );
 }
 
+my $serial = 0;
 sub handle_tcp {
   my ($npe, $ether, $ip, $tcp, $header ) = @_;
 
   push( @buffer, { 'ip'  => $ip,
                    'tcp' => $tcp } );
   shift( @buffer ) while( scalar @buffer > $buffer_len );
-  debug("Adding packet from ".$ip->{'src_ip'}." to the buffer");
+  $serial++;
+  debug("Adding packet #$serial from ".$ip->{'src_ip'}." to the buffer");
   $cui->delete('bottommenu');
   my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
                                -menu => [ { -label => 'Presss q to exit ('.(scalar @buffer).')',
