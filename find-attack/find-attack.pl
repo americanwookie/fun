@@ -6,23 +6,53 @@ use Carp qw( cluck );
 use Net::Pcap::Easy  ();
 use Time::HiRes ();
 use Curses::UI;
+use JSON::XS;
+use Fcntl;
 use lib './lib';
 
 #Logging
 open( STDERR, '>', 'find-attack.log' );
 
-#Net::Pcap::Easy setup
-$Net::Pcap::Easy::MIN_SNAPLEN = 128;
-my $npe = Net::Pcap::Easy->new(
-    dev              => 'eth0',
-    filter           => join( ' ', @ARGV ),
-    packets_per_loop => 1,
-    timeout_in_ms    => 100,
-    bytes_to_capture => 128,
-    timeout_in_ms    => 0, # 0ms means forever
-    promiscuous      => 0, # true or false
-    tcp_callback     => \&handle_tcp,
-);
+#Setup libpcap child
+pipe( my $read, my $write );
+my $child;
+unless( $child = fork() ) {
+  #Clean up your fds
+  close( $read );
+  close( STDIN );
+  close( STDOUT );
+  close( STDERR );
+  select $write;
+  $| = 1;
+
+  #Initialize pcap
+  $Net::Pcap::Easy::MIN_SNAPLEN = 128;
+  my $npe = Net::Pcap::Easy->new(
+      dev              => 'eth0',
+      filter           => join( ' ', @ARGV ),
+      packets_per_loop => 1,
+      bytes_to_capture => 128,
+      timeout_in_ms    => 0, # 0ms means forever
+      promiscuous      => 0, # true or false
+      tcp_callback     => sub {
+        my ( $npe, $ether, $ip, $tcp, $header ) = @_;
+        print {$write} JSON::XS::encode_json( { 'ip'  => { map { $_ => $ip->{$_}  } qw( flags tos ttl proto src_ip dest_ip options ) },
+                                                'tcp' => { map { $_ => $tcp->{$_} } qw( src_port dest_port flags winsize urg ) } } )."\n";
+      }
+  );
+
+  #Setup iterator
+  while(1) {
+    $npe->loop;
+  }
+  exit;
+}
+close($write);
+my $flags = '';
+fcntl( $read, F_GETFL, $flags ) or die "Can't get flags: $!";
+#print "Flags are $flags\n";
+$flags = O_NONBLOCK; #TODO get help, this should be a |=
+fcntl( $read, F_SETFL, $flags ) or die "Can't set O_NOBLOCK: $!";
 
 #Curses::UI setup
 my $cui = new Curses::UI( -color_support => 1 );
@@ -72,6 +102,7 @@ sub exit_dialog()
         -buttons   => ['yes', 'no'],
 
     );
+    kill($child);
     exit(0) if $return;
 }
 sub cycle_focus() {
@@ -90,7 +121,6 @@ $cui->set_binding( \&exit_dialog , "q");
 
 #Initial display
 $topmenu->focus();
-$cui->set_timer( 'npe_loop', sub { debug( "NPE called" ); $npe->loop; } );
 $cui->set_timer( 'body_loop', \&update_body );
 $cui->mainloop;
 
@@ -164,15 +194,39 @@ sub make_hash {
   return sprintf( "[%-${bar_width}s] %3d%%", $str, $percent );
 }
 
-my $serial = 0;
-sub handle_tcp {
-  my ($npe, $ether, $ip, $tcp, $header ) = @_;
+sub update_attribs {
+  debug("Rebuilding attribs from buffer");
+  %attribs = ();
 
-  push( @buffer, { 'ip'  => $ip,
-                   'tcp' => $tcp } );
-  shift( @buffer ) while( scalar @buffer > $buffer_len );
-  $serial++;
-  debug("Adding packet #$serial from ".$ip->{'src_ip'}." to the buffer");
+  #Let's see if our child has given us anything . . .
+  my $new = 0;
+  while( sysread( $read, my $buf, 4096 ) ) {
+    #Split it into lines. Toss the corrupt record. TODO fix
+    my @lines = split(/\n/, $buf);
+    if( $buf !~ /\n$/g ) {
+      debug("WARNING: corrupt record tossed in buf");
+      pop( @lines );
+    }
+
+    #Decode it and shove it on buffer
+    foreach my $line ( @lines ) {
+      my $data;
+      eval {
+        $data = JSON::XS::decode_json( $line );
+      };
+      if(   $data
+         && ref($data) eq 'HASH' ) {
+        $new++;
+        push( @buffer, $data );
+      }
+    }
+
+    #Trim the buffer
+    shift( @buffer ) while( scalar @buffer > $buffer_len );
+  }
+  debug( "Added $new packets to buffer" );
+
+  #Update the UI
   $cui->delete('bottommenu');
   my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
                                -menu => [ { -label => 'Presss q to exit ('.(scalar @buffer).')',
@@ -180,11 +234,8 @@ sub handle_tcp {
                                -fg   => "blue",
                                -y    => $cui->height-1, #WARNING: This option is not upstream
                             );
-}
 
-sub update_attribs {
-  debug("Rebuilding attribs from buffer");
-  %attribs = ();
+  #Generate statistics
   foreach my $p ( @buffer ) {
     #Go through IP attributes
     foreach my $attrib ( qw( flags tos ttl proto src_ip dest_ip options ) ) {
