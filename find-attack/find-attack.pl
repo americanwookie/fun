@@ -202,11 +202,10 @@ sub update_attribs {
   #Let's see if our child has given us anything . . .
   my $new = 0;
   my $started = [ Time::HiRes::gettimeofday ];
-  #TODO: Start here: Look at benchmarks for read technique and make sure the overread_buffer is working
   while( sysread( $read, my $buf, 4096 ) ) {
-    debug( "BENCH Working a ".length( $buf )." string ");
     my @lines = split(/\n/, $buf);
     $lines[0] = $overread_buffer . $lines[0];
+    $overread_buffer = '';
     if( $buf !~ /\n$/g ) {
       $overread_buffer = pop( @lines );
     }
@@ -221,9 +220,10 @@ sub update_attribs {
          && ref($data) eq 'HASH' ) {
         $new++;
         push( @buffer, $data );
+      } else {
+        debug("Warning: JSON decoding error");
       }
     }
-    debug( "BENCH done" );
 
     #Trim the buffer
     shift( @buffer ) while( scalar @buffer > $buffer_len );
