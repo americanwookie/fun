@@ -11,6 +11,11 @@ use JSON::XS;
 use Fcntl;
 use lib './lib';
 
+#Settings
+my $tail_tool = './tail-tcpdump.pl';
+my @tail_args = '';
+my $buffer_len = 100;
+
 #Logging
 open( STDERR, '>', 'find-attack.log' );
 
@@ -24,7 +29,7 @@ unless( $child = fork() ) {
   open(STDOUT, '>&', $write);
   close( $write );
 
-  exec('./tail-tcpdump.pl');
+  exec( $tail_tool, @tail_args );
 }
 close($write);
 my $flags = '';
@@ -39,10 +44,8 @@ my $cui = new Curses::UI( -color_support => 1 );
 #Looping vars
 my %attribs;
 my @buffer;
-my $buffer_len = 100;
 my $overread_buffer = '';
 my $count;
-my $focus = 'topmenu';
 my $oldmenu = '';
 my $debug = 1;
 
