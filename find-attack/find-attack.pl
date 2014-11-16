@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp qw( cluck );
 use Net::Pcap::Easy  ();
+use Sys::Statistics::Linux::NetStats ();
 use Digest::MD5 ();
 use Time::HiRes ();
 use POSIX ':sys_wait_h';
@@ -27,6 +28,11 @@ unless( $child = fork() ) {
   select $write;
   $| = 1;
 
+  #Timers for rate calculation
+  my $start;
+  my $lxs = Sys::Statistics::Linux::NetStats->new();
+  $lxs->init;
+
   #Initialize pcap
   $Net::Pcap::Easy::MIN_SNAPLEN = 128;
   my $npe = Net::Pcap::Easy->new(
@@ -38,6 +44,12 @@ unless( $child = fork() ) {
       promiscuous      => 0, # true or false
       tcp_callback     => sub {
         my ( $npe, $ether, $ip, $tcp, $header ) = @_;
+        $start = [ Time::HiRes::gettimeofday ] if( !$start );
+        if( Time::HiRes::tv_interval( $start ) >= 1 ) {
+          my $stats = $lxs->get;
+          print {$write} JSON::XS::encode_json( { '_rates' => $stats } )."\n";
+           $start = [ Time::HiRes::gettimeofday ];
+        }
         print {$write} JSON::XS::encode_json( { map( +( $_ => $ip->{$_}  ), qw( dest_ip proto src_ip tos ttl ) ),
                                                 map( +( $_ => $tcp->{$_} ), qw( src_port dest_port winsize urg ) ),
                                                 'i_flags'   => sprintf( '%03b', $ip->{'flags'} ),
@@ -257,6 +269,10 @@ sub update_attribs {
   #Generate statistics
   foreach my $p ( @buffer ) {
     foreach my $attrib ( keys( %{$p} ) ) {
+      if( $attrib =~ /^_/ ) {
+        debug("Got a rate packet: ".JSON::XS::encode_json( $p->{$attrib} ) );
+        next;
+      }
       $attribs{$attrib}->{$p->{$attrib}}++;
     }
   }
