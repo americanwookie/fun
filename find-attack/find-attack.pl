@@ -46,6 +46,7 @@ my %attribs;
 my @buffer;
 my $overread_buffer = '';
 my $count;
+my $focus = 'topmenu';
 my $oldmenu = '';
 my $debug = 1;
 
