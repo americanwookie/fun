@@ -229,6 +229,7 @@ sub update_attribs {
     foreach my $attrib ( keys( %{$p} ) ) {
       if( $attrib =~ /^_/ ) {
         if( $attrib eq '_rates' ) {
+          @rates = ();
           foreach my $rate ( keys( %{$p->{$attrib}} ) ) {
             push( @rates, "$rate: $p->{$attrib}->{$rate}" );
           }
