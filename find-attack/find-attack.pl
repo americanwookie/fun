@@ -251,7 +251,7 @@ sub update_attribs {
 
     #Prepare text . . .
     $bottom_text = sprintf( "%-${field_width}s | ", $bottom_text );
-    foreach my $rate ( @rates ) {
+    foreach my $rate ( sort @rates ) {
       $bottom_text .= sprintf( "%-${field_width}s | ", $rate );
     }
     $bottom_text =~ s/ \| $//;
