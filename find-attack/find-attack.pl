@@ -278,7 +278,7 @@ sub build_body {
   my $longest = 0;
   foreach my $val ( keys( %{$data} ) ) {
     my $length = length( $val );
-    $length = length( '(none)' ) if( !$length );
+    $length = length( '(none)' ) if( !$val );
     $longest = $length if( $length > $longest );
   }
   $longest = ( ( $width / 2 ) - 3 ) if( $longest >  ( ( $width / 2 ) - 3 ) );
