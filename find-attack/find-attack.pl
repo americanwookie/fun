@@ -6,6 +6,7 @@ use Carp qw( cluck );
 use Net::Pcap::Easy  ();
 use Digest::MD5 ();
 use Time::HiRes ();
+use POSIX ':sys_wait_h';
 use Curses::UI;
 use JSON::XS;
 use Fcntl;
@@ -106,7 +107,6 @@ sub exit_dialog()
         -message   => "Do you really want to quit?",
         -title     => "Are you sure???",
         -buttons   => ['yes', 'no'],
-
     ) && &exit_cleanly();
 }
 sub cycle_focus() {
@@ -129,6 +129,7 @@ $cui->set_timer( 'body_loop', \&update_body );
 $cui->mainloop;
 
 sub update_body {
+  $cui->disable_timer('body_loop');
   debug("update_body called");
   #
   #Prepare the body
@@ -160,6 +161,7 @@ sub update_body {
     debug( "Calling for draw" );
     $cui->draw();
   }
+  $cui->enable_timer('body_loop');
 }
 
 sub make_hash {
@@ -205,9 +207,14 @@ sub update_attribs {
   #Let's see if our child has given us anything . . .
   my $new = 0;
   my $started = [ Time::HiRes::gettimeofday ];
-  if( eof( $read ) ) {
-    #TODO relay this information to the user . . .
+  if(   eof( $read )
+     || waitpid( $child, WNOHANG ) > 0 ) {
     debug("EOF reached, bailing");
+    $cui->dialog(
+        -message   => 'Our information gathering pipe closed. Exiting.',
+        -title     => 'Error',
+        -buttons   => ['ok'],
+    );
     &exit_cleanly();
   }
   while( sysread( $read, my $buf, 4096 ) ) {
