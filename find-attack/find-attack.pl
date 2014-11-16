@@ -4,6 +4,7 @@ use strict;
 use warnings;
 use Carp qw( cluck );
 use Net::Pcap::Easy  ();
+use Digest::MD5 ();
 use Time::HiRes ();
 use Curses::UI;
 use JSON::XS;
@@ -36,8 +37,12 @@ unless( $child = fork() ) {
       promiscuous      => 0, # true or false
       tcp_callback     => sub {
         my ( $npe, $ether, $ip, $tcp, $header ) = @_;
-        print {$write} JSON::XS::encode_json( { 'ip'  => { map { $_ => $ip->{$_}  } qw( flags tos ttl proto src_ip dest_ip options ) },
-                                                'tcp' => { map { $_ => $tcp->{$_} } qw( src_port dest_port flags winsize urg ) } } )."\n";
+        print {$write} JSON::XS::encode_json( { map( +( $_ => $ip->{$_}  ), qw( dest_ip proto src_ip tos ttl ) ),
+                                                map( +( $_ => $tcp->{$_} ), qw( src_port dest_port winsize urg ) ),
+                                                'i_flags'   => sprintf( '%03b', $ip->{'flags'} ),
+                                                't_flags'   => sprintf( '%09b', $tcp->{'flags'} ),
+                                                'i_options' => Digest::MD5::md5_hex( $ip->{'options'} ),
+                                                't_options' => Digest::MD5::md5_hex( $tcp->{'options'} ) } )."\n";
       }
   );
 
@@ -97,14 +102,12 @@ my $maintext = $win1->add( "initial", "TextViewer",
 #Hotkeys
 sub exit_dialog()
 {
-    my $return = $cui->dialog(
+    $cui->dialog(
         -message   => "Do you really want to quit?",
         -title     => "Are you sure???",
         -buttons   => ['yes', 'no'],
 
-    );
-    kill($child);
-    exit(0) if $return;
+    ) && &exit_cleanly();
 }
 sub cycle_focus() {
   if( $focus eq 'topmenu' ) {
@@ -202,6 +205,11 @@ sub update_attribs {
   #Let's see if our child has given us anything . . .
   my $new = 0;
   my $started = [ Time::HiRes::gettimeofday ];
+  if( eof( $read ) ) {
+    #TODO relay this information to the user . . .
+    debug("EOF reached, bailing");
+    &exit_cleanly();
+  }
   while( sysread( $read, my $buf, 4096 ) ) {
     my @lines = split(/\n/, $buf);
     $lines[0] = $overread_buffer . $lines[0];
@@ -245,25 +253,8 @@ sub update_attribs {
 
   #Generate statistics
   foreach my $p ( @buffer ) {
-    #Go through IP attributes
-    foreach my $attrib ( qw( flags tos ttl proto src_ip dest_ip options ) ) {
-      if(   exists( $p->{'ip'}->{$attrib} )
-         && exists( $p->{'tcp'}->{$attrib} ) ) {
-        $attribs{"ether-$attrib"}->{$p->{'ip'}->{$attrib}}++;
-      } else {
-        $attribs{$attrib}->{$p->{'ip'}->{$attrib}}++;
-      }
-    }
-
-    #Go through the TCP attributes
-    #Skipping options TODO fix
-    foreach my $attrib ( qw( src_port dest_port flags winsize urg ) ) {
-      if(   exists( $p->{'ip'}->{$attrib} )
-         && exists( $p->{'tcp'}->{$attrib} ) ) {
-        $attribs{"tcp-$attrib"}->{$p->{'tcp'}->{$attrib}}++;
-      } else {
-        $attribs{$attrib}->{$p->{'tcp'}->{$attrib}}++;
-      }
+    foreach my $attrib ( keys( %{$p} ) ) {
+      $attribs{$attrib}->{$p->{$attrib}}++;
     }
   }
 
@@ -317,4 +308,9 @@ sub debug {
     warn localtime()." $microseconds ".$msg;
     #cluck( localtime()." ".$msg );
   }
+}
+
+sub exit_cleanly {
+  kill($child);
+  exit(0);
 }
