@@ -3,7 +3,6 @@
 use strict;
 use warnings;
 use Carp qw( cluck );
-use Digest::MD5 ();
 use Time::HiRes ();
 use POSIX ':sys_wait_h';
 use Curses::UI;
@@ -184,12 +183,7 @@ sub update_attribs {
   if(   eof( $read )
      || waitpid( $child, WNOHANG ) > 0 ) {
     debug("EOF reached, bailing");
-    $cui->dialog(
-        -message   => 'Our information gathering pipe closed. Exiting.',
-        -title     => 'Error',
-        -buttons   => ['ok'],
-    );
-    &exit_cleanly();
+    pop_and_die( 'Our information gathering pipe closed. Exiting.' );
   }
   while( sysread( $read, my $buf, 4096 ) ) {
     my @lines = split(/\n/, $buf);
@@ -314,6 +308,16 @@ sub debug {
     warn localtime()." $microseconds ".$msg;
     #cluck( localtime()." ".$msg );
   }
+}
+
+sub pop_and_die {
+  my $msg = shift;
+  $cui->dialog(
+      -message   => $msg,
+      -title     => 'Error',
+      -buttons   => ['ok'],
+  );
+  exit_cleanly();
 }
 
 sub exit_cleanly {
