@@ -35,7 +35,8 @@ my $npe = Net::Pcap::Easy->new(
       $start = [ Time::HiRes::gettimeofday ] if( !$start );
       if( Time::HiRes::tv_interval( $start ) >= 1 ) {
         my $stats = $lxs->get;
-        print JSON::XS::encode_json( { '_rates' => { map {$_ => $stats->{$dev}->{$_} } qw( txbyt rxbyt txpcks rxpcks ) } } )."\n";
+        print JSON::XS::encode_json( { '_rates' => { map( +( $_ => useful_units( $stats->{$dev}->{$_}, 'pps' ) ), qw( txpcks rxpcks ) ),
+                                                     map( +( $_ => useful_units( $stats->{$dev}->{$_}, 'bps' ) ), qw( txbyt rxbyt ) ) } } )."\n";
         $start = [ Time::HiRes::gettimeofday ];
       }
       print JSON::XS::encode_json( { map( +( $_ => $ip->{$_}  ), qw( dest_ip proto src_ip tos ttl ) ),
@@ -50,4 +51,30 @@ my $npe = Net::Pcap::Easy->new(
 #Setup iterator
 while(1) {
   $npe->loop;
+}
+
+sub useful_units {
+  my $val = shift;
+  my $type = shift;
+
+  my %base = ( 'bps' => 1024,
+               'pps' => 1000 );
+
+  my @prefix = ( '',
+                 'k',
+                 'm',
+                 'g',
+                 't' );
+
+  return "$val $type" if( !exists( $base{$type} ) );
+
+  my $multiple = 0;
+  while( $val > 1 ) {
+    $val /= $base{$type};
+    $multiple++;
+  }
+  $val *= $base{$type};
+  $multiple--;
+
+  return sprintf('%.02f %s%s', $val, $prefix[$multiple], $type);
 }
