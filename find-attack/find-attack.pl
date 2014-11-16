@@ -20,6 +20,9 @@ open( STDERR, '>', 'find-attack.log' );
 pipe( my $read, my $write );
 my $child;
 unless( $child = fork() ) {
+  #Settings
+  my $dev = 'eth0';
+
   #Clean up your fds
   close( $read );
   close( STDIN );
@@ -36,18 +39,17 @@ unless( $child = fork() ) {
   #Initialize pcap
   $Net::Pcap::Easy::MIN_SNAPLEN = 128;
   my $npe = Net::Pcap::Easy->new(
-      dev              => 'eth0',
+      dev              => $dev,
       filter           => join( ' ', @ARGV ),
       packets_per_loop => 1,
       bytes_to_capture => 128,
-      timeout_in_ms    => 0, # 0ms means forever
       promiscuous      => 0, # true or false
       tcp_callback     => sub {
         my ( $npe, $ether, $ip, $tcp, $header ) = @_;
         $start = [ Time::HiRes::gettimeofday ] if( !$start );
         if( Time::HiRes::tv_interval( $start ) >= 1 ) {
           my $stats = $lxs->get;
-          print {$write} JSON::XS::encode_json( { '_rates' => $stats } )."\n";
+          print {$write} JSON::XS::encode_json( { '_rates' => $stats->{$dev} } )."\n";
            $start = [ Time::HiRes::gettimeofday ];
         }
         print {$write} JSON::XS::encode_json( { map( +( $_ => $ip->{$_}  ), qw( dest_ip proto src_ip tos ttl ) ),
