@@ -3,8 +3,6 @@
 use strict;
 use warnings;
 use Carp qw( cluck );
-use Net::Pcap::Easy  ();
-use Sys::Statistics::Linux::NetStats ();
 use Digest::MD5 ();
 use Time::HiRes ();
 use POSIX ':sys_wait_h';
@@ -16,56 +14,17 @@ use lib './lib';
 #Logging
 open( STDERR, '>', 'find-attack.log' );
 
-#Setup libpcap child
+#Setup child
 pipe( my $read, my $write );
 my $child;
 unless( $child = fork() ) {
-  #Settings
-  my $dev = 'eth0';
-
   #Clean up your fds
   close( $read );
-  close( STDIN );
   close( STDOUT );
-  close( STDERR );
-  select $write;
-  $| = 1;
+  open(STDOUT, '>&', $write);
+  close( $write );
 
-  #Timers for rate calculation
-  my $start;
-  my $lxs = Sys::Statistics::Linux::NetStats->new();
-  $lxs->init;
-
-  #Initialize pcap
-  $Net::Pcap::Easy::MIN_SNAPLEN = 128;
-  my $npe = Net::Pcap::Easy->new(
-      dev              => $dev,
-      filter           => join( ' ', @ARGV ),
-      packets_per_loop => 1,
-      bytes_to_capture => 128,
-      promiscuous      => 0, # true or false
-      tcp_callback     => sub {
-        my ( $npe, $ether, $ip, $tcp, $header ) = @_;
-        $start = [ Time::HiRes::gettimeofday ] if( !$start );
-        if( Time::HiRes::tv_interval( $start ) >= 1 ) {
-          my $stats = $lxs->get;
-          print {$write} JSON::XS::encode_json( { '_rates' => { map {$_ => $stats->{$dev}->{$_} } qw( txbyt rxbyt txpcks rxpcks ) } } )."\n";
-          $start = [ Time::HiRes::gettimeofday ];
-        }
-        print {$write} JSON::XS::encode_json( { map( +( $_ => $ip->{$_}  ), qw( dest_ip proto src_ip tos ttl ) ),
-                                                map( +( $_ => $tcp->{$_} ), qw( src_port dest_port winsize urg ) ),
-                                                'i_flags'   => sprintf( '%03b', $ip->{'flags'} ),
-                                                't_flags'   => sprintf( '%09b', $tcp->{'flags'} ),
-                                                'i_options' => Digest::MD5::md5_hex( $ip->{'options'} ),
-                                                't_options' => Digest::MD5::md5_hex( $tcp->{'options'} ) } )."\n";
-      }
-  );
-
-  #Setup iterator
-  while(1) {
-    $npe->loop;
-  }
-  exit;
+  exec('./tail-tcpdump.pl');
 }
 close($write);
 my $flags = '';
