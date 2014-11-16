@@ -49,8 +49,8 @@ unless( $child = fork() ) {
         $start = [ Time::HiRes::gettimeofday ] if( !$start );
         if( Time::HiRes::tv_interval( $start ) >= 1 ) {
           my $stats = $lxs->get;
-          print {$write} JSON::XS::encode_json( { '_rates' => $stats->{$dev} } )."\n";
-           $start = [ Time::HiRes::gettimeofday ];
+          print {$write} JSON::XS::encode_json( { '_rates' => { map {$_ => $stats->{$dev}->{$_} } qw( txbyt rxbyt txpcks rxpcks ) } } )."\n";
+          $start = [ Time::HiRes::gettimeofday ];
         }
         print {$write} JSON::XS::encode_json( { map( +( $_ => $ip->{$_}  ), qw( dest_ip proto src_ip tos ttl ) ),
                                                 map( +( $_ => $tcp->{$_} ), qw( src_port dest_port winsize urg ) ),
@@ -260,23 +260,44 @@ sub update_attribs {
   }
   debug( "Added $new packets to buffer" );
 
-  #Update the UI
-  $cui->delete('bottommenu');
-  my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
-                               -menu => [ { -label => 'Presss q to exit ('.(scalar @buffer).')',
-                                            -value => \&exit_dialog } ],
-                               -y    => $cui->height-1, #WARNING: This option is not upstream
-                            );
-
   #Generate statistics
+  my @rates = ();
   foreach my $p ( @buffer ) {
     foreach my $attrib ( keys( %{$p} ) ) {
       if( $attrib =~ /^_/ ) {
-        debug("Got a rate packet: ".JSON::XS::encode_json( $p->{$attrib} ) );
-        next;
+        if( $attrib eq '_rates' ) {
+          foreach my $rate ( keys( %{$p->{$attrib}} ) ) {
+            push( @rates, "$rate: $p->{$attrib}->{$rate}" );
+          }
+        } else {
+          debug("Unknown control packet $attrib received");
+        }
+      } else {
+        $attribs{$attrib}->{$p->{$attrib}}++;
       }
-      $attribs{$attrib}->{$p->{$attrib}}++;
     }
+  }
+
+  #Update the UI
+  if( @rates ) {
+    my $bottom_text = 'Press q to exit';
+
+    #Figure out how wide each field should be
+    my $field_width = int( ( get_width() - ( length(" | ") * ( scalar @rates ) ) ) / scalar @rates + 1);
+
+    #Prepare text . . .
+    $bottom_text = sprintf( "%-${field_width}s | ", $bottom_text );
+    foreach my $rate ( @rates ) {
+      $bottom_text .= sprintf( "%-${field_width}s | ", $rate );
+    }
+    $bottom_text =~ s/ \| $//;
+
+    #Rebuild menu
+    $cui->delete('bottommenu');
+    $cui->add( 'bottommenu', 'Menubar',
+               -menu => [ { -label => $bottom_text } ],
+               -y    => $cui->height-1, #WARNING: This option is not upstream
+             );
   }
 
   $count = scalar @buffer;
