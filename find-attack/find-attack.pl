@@ -75,7 +75,6 @@ my $debug = 1;
 
 #First make your menu bars
 my $topmenu = $cui->add( 'topmenu','Menubar',
-                         -fg   => 'blue',
                          -menu => [ { -label    => 'find-attack.pl alpha',
                                       -noexpand => 1, #WARNING this option is not upstream
                                     } ]
@@ -83,7 +82,6 @@ my $topmenu = $cui->add( 'topmenu','Menubar',
 my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
                              -menu => [ { -label => 'Presss q to exit',
                                           -value => \&exit_dialog } ],
-                             -fg   => "blue",
                              -y    => $cui->height-1, #WARNING: This option is not upstream
                           );
 
@@ -152,7 +150,6 @@ sub update_body {
     }
     debug( "Adding new topmenu" );
     $topmenu = $cui->add( 'topmenu','Menubar',
-                          -fg       => 'blue',
                           -onchange => sub { update_maintext(); }, #WARNING this option is not upstream".
                           -menu     => \@menus
                         );
@@ -254,7 +251,6 @@ sub update_attribs {
   my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
                                -menu => [ { -label => 'Presss q to exit ('.(scalar @buffer).')',
                                             -value => \&exit_dialog } ],
-                               -fg   => "blue",
                                -y    => $cui->height-1, #WARNING: This option is not upstream
                             );
 
