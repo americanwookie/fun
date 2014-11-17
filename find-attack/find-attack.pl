@@ -2,13 +2,13 @@
 
 use strict;
 use warnings;
+use lib './lib';
 use Carp qw( cluck );
 use Time::HiRes ();
 use POSIX ':sys_wait_h';
-use Curses::UI;
 use JSON::XS;
 use Fcntl;
-use lib './lib';
+use Curses::Tabbed;
 
 #Settings
 my $tail_tool = './tail-tcpdump.pl';
@@ -37,109 +37,148 @@ fcntl( $read, F_GETFL, $flags ) or die "Can't get flags: $!";
 $flags = O_NONBLOCK; #TODO get help, this should be a |=
 fcntl( $read, F_SETFL, $flags ) or die "Can't set O_NOBLOCK: $!";
 
-#Curses::UI setup
-my $cui = new Curses::UI( -color_support => 1 );
+my $window = Curses::Tabbed->new( 'callregularly'   => \&callregularly,
+                         'change_maintext' => \&change_maintext );
 
 #Looping vars
-my %attribs;
 my @buffer;
 my $overread_buffer = '';
-my $count;
-my $focus = 'topmenu';
-my $oldmenu = '';
 my $debug = 1;
 
-#First make your menu bars
-my $topmenu = $cui->add( 'topmenu','Menubar',
-                         -menu => [ { -label    => 'find-attack.pl alpha',
-                                      -noexpand => 1, #WARNING this option is not upstream
-                                    } ]
-                       );
-my $bottommenu = $cui->add( 'bottommenu', 'Menubar',
-                             -menu => [ { -label => 'Presss q to exit',
-                                          -value => \&exit_dialog } ],
-                             -y    => $cui->height-1, #WARNING: This option is not upstream
-                          );
+$window->loop;
+kill($child);
+exit(0);
 
-#Setup our initial window
-my $win1 = $cui->add( 'win1', 'Window',
-                      -border => 1,
-                      -y      => 1,
-                      -height => $cui->height-2,
-                      -bfg    => 'red',
+#Callbacks
+sub callregularly {
+  debug("callregularly called");
+
+  #Read new data
+  load_data();
+}
+
+sub change_maintext {
+  my $requested = shift;
+  debug( "Updating screen to ".$requested );
+  my ( $data, $count ) = get_stats( $requested );
+  my $width = $window->get_width;
+
+  #Find the longest 
+  my $longest = 0;
+  foreach my $val ( keys( %{$data} ) ) {
+    my $length = length( $val );
+    $length = length( '(none)' ) if( !$val );
+    $longest = $length if( $length > $longest );
+  }
+  $longest = ( ( $width / 2 ) - 3 ) if( $longest >  ( ( $width / 2 ) - 3 ) );
+  my $bar_width = $width - $longest - 3;
+
+  #Do some output
+  my $body = '';
+  foreach my $val ( sort { $data->{$b} <=> $data->{$a} }
+                    keys( %{$data} ) ) {
+    $body .= sprintf( "  %-${longest}s %s\n",
+                      $val?$val:'(none)',
+                      make_hash( $data->{$val}, $count, $bar_width ),
                     );
-my $maintext = $win1->add( "initial", "TextViewer",
-                           -text   => "Loading initial data, please wait . . .",
-                           -vscrollbar => 1,
-                           -height => $cui->height-2,
-                         );
-
-#Hotkeys
-sub exit_dialog()
-{
-    $cui->dialog(
-        -message   => "Do you really want to quit?",
-        -title     => "Are you sure???",
-        -buttons   => ['yes', 'no'],
-    ) && &exit_cleanly();
-}
-sub cycle_focus() {
-  if( $focus eq 'topmenu' ) {
-    $maintext->focus();
-    $focus = 'maintext';
-  } elsif( $focus eq 'maintext' ) {
-    $topmenu->focus();
-    $focus = 'topmenu';
   }
+  return "$requested\n$body";
 }
-$cui->set_binding(sub {$topmenu->focus()}, "\cX");
-$cui->set_binding( \&update_maintext, 'u' );
-$cui->set_binding( \&cycle_focus, "\t");
-$cui->set_binding( \&exit_dialog , "q");
 
-#Initial display
-$topmenu->focus();
-$cui->set_timer( 'body_loop', \&update_body );
-$cui->mainloop;
+#Non-classifiable subs
+sub load_data { #Consider making this sub only do reading from child. Maybe arithmetic should only happen when a new pane is loaded?
+  debug("Loading new data from child");
+  my @rates = ();
 
-sub update_body {
-  $cui->disable_timer('body_loop');
-  debug("update_body called");
-  #
-  #Prepare the body
-  #
-  update_attribs();
-  if(   $maintext->text() =~ /^Loading initial data/
-     && keys( %attribs ) ) {
-    debug( "Telling the user sample is loaded" );
-    $maintext->text( 'Sample is loaded. Please choose an option from the top menu.' );
+  #Let's see if our child has given us anything . . .
+  my $new = 0;
+  my $started = [ Time::HiRes::gettimeofday ];
+  if(   eof( $read )
+     || waitpid( $child, WNOHANG ) > 0 ) {
+    debug("EOF reached, bailing");
+    $window->die( 'Our information gathering pipe closed. Exiting.' );
   }
- 
-  #Set the menu options
-  if( $oldmenu ne join( '', keys( %attribs ) ) ) {
-    $cui->delete('topmenu');
-    my @menus;
-    foreach my $attrib ( keys %attribs ) {
-      push( @menus, { -label    => $attrib,
-                      -noexpand => 1, #WARNING this option is not upstream
-                    } );
+  while( sysread( $read, my $buf, 4096 ) ) {
+    my @lines = split(/\n/, $buf);
+    $lines[0] = $overread_buffer . $lines[0];
+    $overread_buffer = '';
+    if( $buf !~ /\n$/g ) {
+      $overread_buffer = pop( @lines );
     }
-    debug( "Adding new topmenu" );
-    $topmenu = $cui->add( 'topmenu','Menubar',
-                          -onchange => sub { update_maintext(); }, #WARNING this option is not upstream".
-                          -menu     => \@menus
-                        );
-    $oldmenu = join( '', keys( %attribs ) );
-    $topmenu->focus();
-    debug( "Calling for draw" );
-    $cui->draw();
+
+    #Decode it and shove it on buffer
+    foreach my $line ( @lines ) {
+      my $data;
+      eval {
+        $data = JSON::XS::decode_json( $line );
+      };
+      if(   $data
+         && ref($data) eq 'HASH' ) {
+        my @keys = keys( %{$data} );
+        if(   scalar @keys == 1
+           && $keys[0] =~ /^_/ ) {
+          if( $keys[0] eq '_rates' ) {
+            @rates = ();
+            foreach my $rate ( keys( %{$data->{$keys[0]}} ) ) {
+              push( @rates, "$rate: $data->{$keys[0]}->{$rate}" );
+            }
+          } else {
+            debug("Unknown control packet $keys[0] received");
+          }
+        } else {
+          $new++;
+          push( @buffer, $data );
+        }
+      } else {
+        debug("Warning: JSON decoding error");
+      }
+    }
+
+    #Trim the buffer
+    shift( @buffer ) while( scalar @buffer > $buffer_len );
+    if ( Time::HiRes::tv_interval( $started ) > 0.2 ) {
+      debug("I've been in this loop too long. Bailing");
+      last;
+    }
   }
-  $cui->enable_timer('body_loop');
+  debug( "Added $new packets to buffer" );
+
+  #Update the UI
+  if(  !$window->top
+     && @buffer ) {
+    $window->top( keys( %{$buffer[0]} ) );
+  }
+  if( @rates ) {
+    $window->bottom( 'Press q to exit', 
+                     sort( @rates ) );
+  }
 }
 
+sub get_stats {
+  my $wanted = shift;
+
+  my %stats = ();
+  foreach my $p ( @buffer ) {
+    if( exists( $p->{$wanted} ) ) {
+      $stats{$p->{$wanted}}++;
+    }
+  }
+  return ( \%stats, scalar @buffer );
+}
+
+sub debug {
+  my $msg = shift;
+  my ( undef, $microseconds) = Time::HiRes::gettimeofday;
+  if( $debug ) {
+    warn localtime()." $microseconds ".$msg;
+    #cluck( localtime()." ".$msg );
+  }
+}
+
+#Help with drawing subs (should be purely functional)
 sub make_hash {
-  my $part  = shift;
-  my $total = shift;
+  my $part       = shift;
+  my $total      = shift;
   my $hash_width = shift;
 
   #On the right hand side, we'll leave five spaces for percent, e.g.
@@ -171,156 +210,4 @@ sub make_hash {
   }
 
   return sprintf( "[%-${bar_width}s] %3d%%", $str, $percent );
-}
-
-sub update_attribs {
-  debug("Rebuilding attribs from buffer");
-  %attribs = ();
-
-  #Let's see if our child has given us anything . . .
-  my $new = 0;
-  my $started = [ Time::HiRes::gettimeofday ];
-  if(   eof( $read )
-     || waitpid( $child, WNOHANG ) > 0 ) {
-    debug("EOF reached, bailing");
-    pop_and_die( 'Our information gathering pipe closed. Exiting.' );
-  }
-  while( sysread( $read, my $buf, 4096 ) ) {
-    my @lines = split(/\n/, $buf);
-    $lines[0] = $overread_buffer . $lines[0];
-    $overread_buffer = '';
-    if( $buf !~ /\n$/g ) {
-      $overread_buffer = pop( @lines );
-    }
-
-    #Decode it and shove it on buffer
-    foreach my $line ( @lines ) {
-      my $data;
-      eval {
-        $data = JSON::XS::decode_json( $line );
-      };
-      if(   $data
-         && ref($data) eq 'HASH' ) {
-        $new++;
-        push( @buffer, $data );
-      } else {
-        debug("Warning: JSON decoding error");
-      }
-    }
-
-    #Trim the buffer
-    shift( @buffer ) while( scalar @buffer > $buffer_len );
-    if ( Time::HiRes::tv_interval( $started ) > 0.2 ) {
-      debug("I've been in this loop too long. Bailing");
-      last;
-    }
-  }
-  debug( "Added $new packets to buffer" );
-
-  #Generate statistics
-  my @rates = ();
-  foreach my $p ( @buffer ) {
-    foreach my $attrib ( keys( %{$p} ) ) {
-      if( $attrib =~ /^_/ ) {
-        if( $attrib eq '_rates' ) {
-          @rates = ();
-          foreach my $rate ( keys( %{$p->{$attrib}} ) ) {
-            push( @rates, "$rate: $p->{$attrib}->{$rate}" );
-          }
-        } else {
-          debug("Unknown control packet $attrib received");
-        }
-      } else {
-        $attribs{$attrib}->{$p->{$attrib}}++;
-      }
-    }
-  }
-
-  #Update the UI
-  if( @rates ) {
-    my $bottom_text = 'Press q to exit';
-
-    #Figure out how wide each field should be
-    my $field_width = int( ( get_width() - ( length(" | ") * ( scalar @rates ) ) ) / scalar @rates + 1);
-
-    #Prepare text . . .
-    $bottom_text = sprintf( "%-${field_width}s | ", $bottom_text );
-    foreach my $rate ( sort @rates ) {
-      $bottom_text .= sprintf( "%-${field_width}s | ", $rate );
-    }
-    $bottom_text =~ s/ \| $//;
-
-    #Rebuild menu
-    $cui->delete('bottommenu');
-    $cui->add( 'bottommenu', 'Menubar',
-               -menu => [ { -label => $bottom_text } ],
-               -y    => $cui->height-1, #WARNING: This option is not upstream
-             );
-  }
-
-  $count = scalar @buffer;
-}
-
-sub build_body {
-  my $data = shift;
-  my $width = get_width();
-
-  #Find the longest 
-  my $longest = 0;
-  foreach my $val ( keys( %{$data} ) ) {
-    my $length = length( $val );
-    $length = length( '(none)' ) if( !$val );
-    $longest = $length if( $length > $longest );
-  }
-  $longest = ( ( $width / 2 ) - 3 ) if( $longest >  ( ( $width / 2 ) - 3 ) );
-  my $bar_width = $width - $longest - 3;
-
-  #Do some output
-  my $body = '';
-  foreach my $val ( sort { $data->{$b} <=> $data->{$a} }
-                    keys( %{$data} ) ) {
-    $body .= sprintf( "  %-${longest}s %s\n",
-                      $val?$val:'(none)',
-                      make_hash( $data->{$val}, $count, $bar_width ),
-                    );
-  }
-  return $body;
-}
-
-sub update_maintext {
-  my $selected = $topmenu->selected();
-  debug( "Updating screen to ".$selected );
-  update_attribs();
-  $maintext->text( "$selected\n".build_body( $attribs{$selected} ) );
-  $cui->draw();
-}
-
-sub get_width {
-  my $width = $cui->width-5;
-  $width-- if( $width % 2 );
-  return $width;
-}
-
-sub debug {
-  my $msg = shift;
-  my ( undef, $microseconds) = Time::HiRes::gettimeofday;
-  if( $debug ) {
-    warn localtime()." $microseconds ".$msg;
-    #cluck( localtime()." ".$msg );
-  }
-}
-
-sub pop_and_die {
-  my $msg = shift;
-  $cui->dialog(
-      -message   => $msg,
-      -title     => 'Error',
-      -buttons   => ['ok'],
-  );
-  exit_cleanly();
-}
-
-sub exit_cleanly {
-  kill($child);
-  exit(0);
 }
