@@ -96,7 +96,6 @@ foreach my $filter ( @{$config->{'filters'}} ) {
 #    }
     my $list = list2range( @sub );
     my $es = Email::Simple->new(join '', @{ $imap->top($list) } );
-    print Dumper $es;
     if( $imap->copy( $list, $filter->{'destination'} ) ) {
       if( $imap->delete( $list ) ) {
         print "Moved and deleted ".scalar @sub." messages for $filter->{'name'}\n";
@@ -132,7 +131,7 @@ sub load_config {
   foreach my $filter ( @{ $config->{'filters'} } ) {
     foreach my $rule ( @{ $filter->{'rules'} } ) {
       if( $rule->{'value'} =~ /^\/([A-Za-z0-9 ]+)\/$/ ) {
-        $rule->{'value'} = qr( $1 );
+        $rule->{'value'} = qr($1);
       }
     }
   }
