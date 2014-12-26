@@ -7,7 +7,7 @@ print JSON::XS->new->pretty(1)->encode( { 'server'  => { 'user'        => 'scott
                                                          'imap_server' => 'example.com',
                                                          'main_folder' => 'INBOX' },
                                           'filters' => [ { 'rules'       => [ { 'header' => 'From',
-                                                                                'value'  => qq(/Cron Daemon/) } ],
+                                                                                'value'  => qq(/Cron Daemon\\./) } ],
                                                            'action'      => 'move',
                                                            'name'        => 'Cron',
                                                            'destination' => 'INBOX.Cron' },
