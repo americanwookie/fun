@@ -4,9 +4,20 @@ use strict;
 use Net::IMAP::Simple::SSL ();
 use Email::Simple          ();
 use Util                   ();
+use DateTime               ();
 
 #Settings
 my $config = Util::load_config();
+
+#CLI Args
+my $days = 1;
+if(   $ARGV[0]
+   && $ARGV[0] =~ /^(\d+)$/ ) {
+  $days += $1;
+} elsif( $ARGV[0] ) {
+  print "First argument can be either NULL or a number of days back to filter for. In other words, if you want to include yesterdays E-mail in the filtering, provide the number 1\n";
+  exit(1);
+}
 
 # Create the object
 my $imap = Net::IMAP::Simple::SSL->new( $config->{'server'}->{'imap_server'} ) ||
@@ -20,10 +31,19 @@ if(!$imap->login( $config->{'server'}->{'user'}, $config->{'server'}->{'pass'} )
 my %mailboxes = map { $_ => 1 } $imap->mailboxes();
 die($config->{'server'}->{'main_folder'}.' isn\'t a mailbox') if( !exists( $mailboxes{$config->{'server'}->{'main_folder'}} ) );
 
-my $nm = $imap->select( $config->{'server'}->{'main_folder'} );
-print "Looking at $nm messages\n";
-for(my $i = 1; $i <= $nm; $i++){
-  print "On $i\n" unless( $i % 1000);
+my $max_messages = $imap->select( $config->{'server'}->{'main_folder'} );
+
+#Only sift through today's messages
+my $date = DateTime->now;
+$date->subtract( 'days' => $days );
+my @ids = $imap->search_since($date->day.'-'.$date->month_abbr.'-'.$date->year);
+
+print "Looking at ".scalar @ids." messages\n";
+my $count = 0;
+foreach my $i ( @ids ) {
+  unless( $count % 100 ) {
+    print "On $count\n" if( $count );
+  }
 
   my $es = Email::Simple->new(join '', @{ $imap->top($i) } );
   foreach my $filter ( @{$config->{'filters'}} ) {
@@ -81,6 +101,8 @@ for(my $i = 1; $i <= $nm; $i++){
       last;
     }
   }
+} continue {
+  $count++;
 }
 foreach my $filter ( @{$config->{'filters'}} ) {
   $filter->{'matching'} ||= [];
