@@ -26,7 +26,10 @@ if( !@ARGV ) {
 }
 
 foreach my $mailbox ( @ARGV ) {
-  die( $mailbox.' isn\'t a mailbox. Run without an argument for a list of mailboxes' ) if( !exists( $mailboxes{$mailbox} ) );
+  if( !exists( $mailboxes{$mailbox} ) ) {
+    warn $mailbox.' isn\'t a mailbox. Run without an argument for a list of mailboxes';
+    next;
+  }
 
   $imap->select( $mailbox );
   my @ids = $imap->search("UNSEEN");
