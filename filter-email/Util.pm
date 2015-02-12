@@ -25,7 +25,7 @@ sub load_config {
   }
   foreach my $filter ( @{ $config->{'filters'} } ) {
     foreach my $rule ( @{ $filter->{'rules'} } ) {
-      if( $rule->{'value'} =~ /^\/([.A-Za-z0-9@\\ !_-]+)\/$/ ) {
+      if( $rule->{'value'} =~ /^\/([].A-Za-z0-9@\\ !_[()?:|+-]+)\/$/ ) {
         $rule->{'value'} = qr($1);
       } elsif (   $rule->{'value'} =~ /^\//
                && $rule->{'value'} =~ /\/$/ ) {
