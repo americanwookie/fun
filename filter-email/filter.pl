@@ -31,6 +31,12 @@ if(!$imap->login( $config->{'server'}->{'user'}, $config->{'server'}->{'pass'} )
 my %mailboxes = map { $_ => 1 } $imap->mailboxes();
 die($config->{'server'}->{'main_folder'}.' isn\'t a mailbox') if( !exists( $mailboxes{$config->{'server'}->{'main_folder'}} ) );
 
+foreach my $filter ( @{$config->{'filters'}} ) {
+  if( !exists( $mailboxes{$filter->{'destination'}} ) ) {
+    warn "Destination mailbox $filter->{'destination'} doesn't exist for filter named $filter->{'name'}";
+  }
+}
+
 my $max_messages = $imap->select( $config->{'server'}->{'main_folder'} );
 
 #Only sift through today's messages
@@ -66,7 +72,6 @@ foreach my $i ( @ids ) {
       next;
     }
     if( !exists( $mailboxes{$filter->{'destination'}} ) ) {
-      warn "Destination mailbox $filter->{'destination'} doesn't exist for filter named $filter->{'name'}";
       next;
     }
 
