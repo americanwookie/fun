@@ -108,13 +108,14 @@ foreach my $filter ( @{$config->{'filters'}} ) {
   $filter->{'matching'} ||= [];
   while( @{$filter->{'matching'}} ) {
     my @sub = @{$filter->{'matching'}};
-#TODO: Make messages per run configuratble
-#    if( scalar @{$filter->{'matching'}} > 1000 ) {
-#      @sub = @{$filter->{'matching'}}[0..999];
-#      $filter->{'matching'} = [ @{$filter->{'matching'}}[1000..$#{$filter->{'matching'}}] ];
-#    } else {
+    my $per_run = 99;
+    if( scalar @{$filter->{'matching'}} > $per_run ) {
+      @sub = @{$filter->{'matching'}}[0..$per_run];
+      $filter->{'matching'} = [ @{$filter->{'matching'}}[($per_run+1)..$#{$filter->{'matching'}}] ];
+    } else {
+      @sub = @{$filter->{'matching'}};
       $filter->{'matching'} = [];
-#    }
+    }
     my $list = Util::list2range( @sub );
     if( $imap->copy( $list, $filter->{'destination'} ) ) {
       if( $imap->delete( $list ) ) {
